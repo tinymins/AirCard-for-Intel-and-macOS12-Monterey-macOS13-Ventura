@@ -1421,8 +1421,7 @@ struct WalletCardView: View {
                                 HStack {
                                     Spacer()
                                     Label("Change Skin", systemImage: "photo.badge.arrow.forward")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
+                                        .font(.caption.weight(.semibold))
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
                                         .background(.ultraThinMaterial)
@@ -1713,7 +1712,7 @@ struct ContentView: View {
         .sheet(isPresented: $vm.showAddCardSheet) {
             addCardSheet
         }
-        .onChange(of: vm.selectedTab) { _, newTab in
+        .onChange(of: vm.selectedTab) { newTab in
             if newTab == .passcodeThemes && vm.isScanningCards {
                 vm.stopCardScanning()
             }
@@ -1950,7 +1949,7 @@ struct ContentView: View {
             HStack(spacing: 12) {
                 Button(action: { vm.startCardScanning() }) {
                     Label("Start Scanning", systemImage: "wave.3.forward.circle.fill")
-                        .fontWeight(.semibold)
+                        .font(.body.weight(.semibold))
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
@@ -2412,7 +2411,7 @@ struct ContentView: View {
                         Text("Circle Buttons").tag(true)
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: vm.creatorMaskToCircles) { _, _ in
+                    .onChange(of: vm.creatorMaskToCircles) { _ in
                         vm.updatePosterSlicing()
                     }
                     
@@ -2455,7 +2454,7 @@ struct ContentView: View {
                         Slider(value: $vm.creatorPosterZoom, in: 0.5...3.0, step: 0.05) {
                             Text("Zoom")
                         }
-                        .onChange(of: vm.creatorPosterZoom) { _, _ in
+                        .onChange(of: vm.creatorPosterZoom) { _ in
                             vm.updatePosterSlicing()
                         }
                         .disabled(vm.creatorPosterImage == nil)
@@ -2501,8 +2500,7 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Label("Key \(selDigit) Framing", systemImage: "crop")
-                                    .font(.subheadline)
-                                    .fontWeight(.bold)
+                                    .font(.subheadline.weight(.bold))
                                     .foregroundColor(.purple)
                                 Spacer()
                                 Button("Reset") {
@@ -2988,7 +2986,7 @@ struct ContentView: View {
                     .padding(.vertical, 4)
                 }
                 .frame(height: 90)
-                .onChange(of: vm.logs.count) { _, _ in
+                .onChange(of: vm.logs.count) { _ in
                     if let last = vm.logs.indices.last {
                         proxy.scrollTo(last, anchor: .bottom)
                     }
@@ -3392,26 +3390,43 @@ struct ContentView: View {
     }
     
     private func loadImage(from provider: NSItemProvider, completion: @escaping (NSImage?) -> Void) {
-        if provider.canLoadObject(ofClass: URL.self) {
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url = url, let img = NSImage(contentsOf: url) {
-                    DispatchQueue.main.async { completion(img) }
-                    return
-                }
-                if provider.canLoadObject(ofClass: NSImage.self) {
-                    _ = provider.loadObject(ofClass: NSImage.self) { img, _ in
-                        DispatchQueue.main.async { completion(img as? NSImage) }
-                    }
+        let fileURLIdentifier = UTType.fileURL.identifier
+        if provider.hasItemConformingToTypeIdentifier(fileURLIdentifier) {
+            provider.loadItem(forTypeIdentifier: fileURLIdentifier, options: nil) { item, _ in
+                let url: URL?
+                if let itemURL = item as? URL {
+                    url = itemURL
+                } else if let data = item as? Data {
+                    url = URL(dataRepresentation: data, relativeTo: nil)
                 } else {
-                    DispatchQueue.main.async { completion(nil) }
+                    url = nil
+                }
+
+                if let url, let image = NSImage(contentsOf: url) {
+                    DispatchQueue.main.async { completion(image) }
+                } else {
+                    loadImageData(from: provider, completion: completion)
                 }
             }
-        } else if provider.canLoadObject(ofClass: NSImage.self) {
-            _ = provider.loadObject(ofClass: NSImage.self) { img, _ in
-                DispatchQueue.main.async { completion(img as? NSImage) }
+            return
+        }
+
+        loadImageData(from: provider, completion: completion)
+    }
+
+    private func loadImageData(from provider: NSItemProvider, completion: @escaping (NSImage?) -> Void) {
+        guard let typeIdentifier = provider.registeredTypeIdentifiers.first(where: {
+            UTType($0)?.conforms(to: .image) == true
+        }) else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+
+        provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
+            let image = data.flatMap(NSImage.init(data:))
+            DispatchQueue.main.async {
+                completion(image)
             }
-        } else {
-            completion(nil)
         }
     }
 }
@@ -3425,6 +3440,5 @@ struct AirCardApp: App {
             ContentView()
         }
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
     }
 }

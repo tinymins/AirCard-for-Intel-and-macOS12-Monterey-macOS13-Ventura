@@ -1,5 +1,5 @@
 CLANG := xcrun clang
-CFLAGS := -fobjc-arc -O2 -Wall -Wextra -arch arm64 -arch x86_64
+CFLAGS := -fobjc-arc -O2 -Wall -Wextra -arch arm64 -arch x86_64 -mmacosx-version-min=12.0
 FOUNDATION := -framework Foundation -framework CoreFoundation
 MOBILEDEVICE := /System/Library/PrivateFrameworks/MobileDevice.framework/MobileDevice
 AIRTRAFFIC := /System/Library/PrivateFrameworks/AirTrafficHost.framework/AirTrafficHost
