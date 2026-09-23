@@ -177,6 +177,115 @@ def operation_ok(result: dict) -> bool:
     )
 
 
+def read_file(udid: str, target: str, leaf: str, retries: int = 1) -> "bytes | None":
+    """Exports a file outside Media into Media, reads it via AFC, restores it.
+
+    Move semantics: the AirTraffic sync MOVES target/leaf to Media/recovered.
+    The original is written back immediately with write_file, then the export
+    staging is cleaned and Books preimage restored. Returns file bytes, or
+    None on failure. Test only on disposable paths before Wallet data.
+    """
+    if "/" in leaf or leaf in ("", ".", ".."):
+        raise ValueError("leaf must be a plain file name")
+    for attempt in range(1, max(1, retries) + 1):
+        try:
+            token = secrets.token_hex(10)
+            source = f"{SOURCE_PREFIX}{token}"
+            link_destination = f"{LINK_PREFIX}{token}"
+            recovered = f"{RECOVERED_PREFIX}{token}"
+
+            link_identifier = f"../../{source}/p0/p1/p2/link"
+            target_path = posixpath.join(target, leaf)
+            target_identifier = posixpath.relpath(target_path, AIRLOCK_ROOT)
+
+            identifiers = [link_identifier, target_identifier]
+            destinations = [link_destination, recovered]
+
+            with tempfile.TemporaryDirectory(prefix="airlift-read-") as temporary:
+                work = Path(temporary)
+                archive_path = work / "payload.zip"
+                books_path = work / "Books.plist"
+                local_out = work / "recovered.bin"
+                snapshot_root = work / "books-snapshot"
+                snapshot_root.mkdir()
+
+                archive_path.write_bytes(build_archive(target, b"aircard-backup-staging"))
+                books_path.write_bytes(build_books(identifiers))
+
+                snapshot = native("snapshot-books", udid, os.fspath(snapshot_root))
+                if not operation_ok(snapshot):
+                    if attempt < retries:
+                        time.sleep(0.3 * attempt)
+                        continue
+                    return None
+
+                stage = native(
+                    "stage",
+                    udid,
+                    source,
+                    link_destination,
+                    recovered,
+                    os.fspath(archive_path),
+                    os.fspath(books_path),
+                    os.fspath(snapshot_root),
+                )
+                if not operation_ok(stage):
+                    try:
+                        native("finish-write", udid, source, link_destination,
+                               recovered, os.fspath(snapshot_root))
+                    except Exception:
+                        pass
+                    if attempt < retries:
+                        time.sleep(0.3 * attempt)
+                        continue
+                    return None
+
+                atc_cmd = [os.fspath(AIRTRAFFIC_HOST), udid]
+                for identifier, destination in zip(identifiers, destinations):
+                    atc_cmd.extend((identifier, destination))
+                atc = run_json(atc_cmd, timeout=120)
+                if not (atc.get("exitCode") == 0 and atc.get("ok")):
+                    try:
+                        native("finish-write", udid, source, link_destination,
+                               recovered, os.fspath(snapshot_root))
+                    except Exception:
+                        pass
+                    if attempt < retries:
+                        time.sleep(0.3 * attempt)
+                        continue
+                    return None
+
+                rd = native("afc-read", udid, recovered, os.fspath(local_out))
+                if not operation_ok(rd) or not local_out.is_file():
+                    # Original is sitting in Media/recovered; do NOT delete it.
+                    # Leave staging for manual recovery, report failure.
+                    return None
+                data = local_out.read_bytes()
+
+                restored = write_file(udid, target, leaf, data, retries=3)
+
+                finish = native(
+                    "finish-write",
+                    udid,
+                    source,
+                    link_destination,
+                    recovered,
+                    os.fspath(snapshot_root),
+                )
+                if restored and operation_ok(finish):
+                    return data
+                # Bytes were still captured; return them so caller can save
+                # a backup copy even if cleanup reported incomplete.
+                if data:
+                    return data
+                return None
+        except Exception:
+            pass
+        if attempt < retries:
+            time.sleep(0.3 * attempt)
+    return None
+
+
 def write_file(udid: str, target: str, leaf: str, payload: bytes, retries: int = 3) -> bool:
     for attempt in range(1, max(1, retries) + 1):
         try:
@@ -344,22 +453,94 @@ def write_files_batch(
     return False
 
 
+def remove_files(udid: str, target: str, leaves: list[str], retries: int = 3) -> bool:
+    """Remove specific files through the relocated Airlift symlink.
+
+    Wallet only rebuilds its rendered card faces when the old cache entries are
+    absent. Overwriting them with arbitrary bytes leaves stale artwork active on
+    recent iOS releases, so cache invalidation must be a real unlink operation.
+    """
+    if not leaves:
+        return True
+    if any(not leaf or "/" in leaf or leaf in {".", ".."} for leaf in leaves):
+        raise ValueError("cache leaves must be plain file names")
+
+    for attempt in range(1, max(1, retries) + 1):
+        try:
+            token = secrets.token_hex(10)
+            source = f"{SOURCE_PREFIX}{token}"
+            link_destination = f"{LINK_PREFIX}{token}"
+            recovered = f"{RECOVERED_PREFIX}{token}"
+            link_identifier = f"../../{source}/p0/p1/p2/link"
+            protected_identifiers = [
+                f"../../{link_destination}/{leaf}" for leaf in leaves
+            ]
+            removed_destinations = [
+                f"{source}/removed-{index}" for index in range(len(leaves))
+            ]
+
+            with tempfile.TemporaryDirectory(prefix="airlift-remove-") as temporary:
+                work = Path(temporary)
+                archive_path = work / "payload.zip"
+                books_path = work / "Books.plist"
+                snapshot_root = work / "books-snapshot"
+                snapshot_root.mkdir()
+
+                # Relocate the symlink first, then have AirTraffic move each
+                # protected cache file out through it. This is a real unlink;
+                # AFCRemovePath cannot traverse the protected link on iOS 27.
+                archive_path.write_bytes(build_archive(target, b"aircard-v2"))
+                books_path.write_bytes(build_books(
+                    [link_identifier, *protected_identifiers]
+                ))
+
+                snapshot = native("snapshot-books", udid, os.fspath(snapshot_root))
+                if not operation_ok(snapshot):
+                    raise RuntimeError("could not snapshot Books state")
+                stage = native(
+                    "stage", udid, source, link_destination, recovered,
+                    os.fspath(archive_path), os.fspath(books_path),
+                    os.fspath(snapshot_root),
+                )
+                if not operation_ok(stage):
+                    raise RuntimeError("could not stage cache removal")
+
+                atc = run_json(
+                    [os.fspath(AIRTRAFFIC_HOST), udid,
+                     link_identifier, link_destination,
+                     *[part for pair in zip(protected_identifiers, removed_destinations)
+                       for part in pair]],
+                    timeout=120,
+                )
+                if atc.get("exitCode") != 0 or not atc.get("ok"):
+                    native("finish-write", udid, source, link_destination,
+                           recovered, os.fspath(snapshot_root))
+                    raise RuntimeError("could not relocate cache link")
+
+                finish = native(
+                    "finish-moved-removal", udid, source, link_destination,
+                    recovered, os.fspath(snapshot_root), str(len(leaves)),
+                )
+                if operation_ok(finish):
+                    return True
+        except Exception:
+            pass
+        if attempt < retries:
+            time.sleep(0.4 * attempt)
+    return False
+
+
 def invalidate_cache(udid: str, card_hash: str) -> bool:
-    """Invalidates card image cache by corrupting cache leaves in .cache and .pkcache."""
-    any_ok = False
-    cache_leaves = [("FrontFace", b"corrupted"), ("PlaceHolder", b"corrupted"), ("Preview", b"corrupted")]
+    """Remove every rendered card face so Wallet must rebuild from the pass."""
+    all_ok = True
+    cache_leaves = ["FrontFace", "PlaceHolder", "Preview"]
     for ext in [".cache", ".pkcache"]:
         cache_dir = f"/var/mobile/Library/Passes/Cards/{card_hash}{ext}"
         try:
-            if write_files_batch(udid, cache_dir, cache_leaves):
-                any_ok = True
-            else:
-                for leaf, payload in cache_leaves:
-                    if write_file(udid, cache_dir, leaf, payload):
-                        any_ok = True
+            all_ok = remove_files(udid, cache_dir, cache_leaves) and all_ok
         except Exception:
-            pass
-    return any_ok
+            all_ok = False
+    return all_ok
 
 
 def main():

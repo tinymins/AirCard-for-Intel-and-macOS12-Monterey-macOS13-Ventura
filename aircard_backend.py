@@ -45,6 +45,7 @@ from apply_card_skin import (
     operation_ok,
     write_file,
     write_files_batch,
+    remove_files,
     build_archive_multi,
     ROOT,
     DEVICE_HELPER,
@@ -143,7 +144,7 @@ def cmd_flash(udid: str, card_hash: str, image_path: str) -> bool:
 
     pkpass_dir = f"/var/mobile/Library/Passes/Cards/{card_hash}.pkpass"
     
-    total_steps = len(asset_payloads) + (len(CACHE_FILES) * 2) + 1
+    total_steps = 4
     step = 0
     all_ok = True
 
@@ -172,8 +173,8 @@ def cmd_flash(udid: str, card_hash: str, image_path: str) -> bool:
             if not ok_single:
                 all_ok = False
 
-    # Clear cache with batch
-    cache_leaves = [(leaf, b"corrupted") for leaf in CACHE_FILES]
+    # Wallet v2: genuinely unlink rendered faces. Writing corrupt bytes here can
+    # leave the previous artwork resident indefinitely on iOS 27.
     for ext in [".cache", ".pkcache"]:
         cache_dir = f"/var/mobile/Library/Passes/Cards/{card_hash}{ext}"
         step += 1
@@ -186,15 +187,19 @@ def cmd_flash(udid: str, card_hash: str, image_path: str) -> bool:
         }))
         sys.stdout.flush()
         try:
-            ok_cache = write_files_batch(udid, cache_dir, cache_leaves)
+            ok_cache = remove_files(udid, cache_dir, list(CACHE_FILES))
         except Exception:
             ok_cache = False
         if not ok_cache:
-            for leaf, payload in cache_leaves:
-                try:
-                    write_file(udid, cache_dir, leaf, payload)
-                except Exception:
-                    pass
+            all_ok = False
+            print(json.dumps({
+                "type": "error",
+                "card": card_hash,
+                "step": step,
+                "total": total_steps,
+                "message": f"Could not clear Wallet cache ({ext}); card was not reported as updated."
+            }))
+            sys.stdout.flush()
 
     step += 1
     if not all_ok:

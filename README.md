@@ -59,6 +59,23 @@
 5. Click **Flash Skins**.
 6. Force-close the **Wallet** app on your iPhone from the App Switcher (or reboot) to see your new custom card design!
 
+### If scanning finds no cards
+
+The scanner uses the iPhone's unified log service, including Info/Debug events.
+On iOS 18.6.2, the legacy log service can show Wallet activity while omitting the
+resource lookup messages that contain card identifiers.
+
+Open **Log** and check for `Connected to the unified device log stream`, then
+double-click the side button, authenticate, and tap or switch cards. If the log
+reader stops, reconnect and unlock the iPhone, then start another scan. Values
+that iOS replaces with `<private>` cannot be recovered by the scanner.
+
+If your device previously connected but scanning found zero cards, please try
+this build and report whether it helps. Include your iPhone model, iOS version,
+macOS version, and the AirCard version or commit tested. Avoid posting full
+device logs or card identifiers. See [scanner validation](docs/wallet-card-detection.md)
+for the verified environment and remaining coverage.
+
 ---
 
 ## How to Apply Lockscreen Passcode Themes (.passthm)

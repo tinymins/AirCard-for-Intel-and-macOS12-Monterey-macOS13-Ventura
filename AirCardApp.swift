@@ -9,6 +9,9 @@ struct DeviceInfo: Codable {
     var name: String?
     var version: String?
     var product: String?
+    var language: String?
+    var locale: String?
+    var bold_text: Bool?
     var airlift_compatible: Bool?
     var connected: Bool
     var error: String?
@@ -743,6 +746,7 @@ class AppViewModel: ObservableObject {
                         if dev.connected {
                             self.statusText = "Connected to \(dev.name ?? "iPhone")"
                             self.log("Device connected: \(dev.name ?? "iPhone") (\(dev.product ?? ""), iOS \(dev.version ?? ""))")
+                            self.applyDevicePreferences(from: dev)
                         } else if dev.error == "device_helper_missing" {
                             self.statusText = "Device tools are missing from this build."
                             self.log("Bundled device_helper not found — detection cannot run.")
@@ -763,6 +767,36 @@ class AppViewModel: ObservableObject {
                 }
             }
         }
+    }
+    
+    func applyDevicePreferences(from dev: DeviceInfo) {
+        // 1. Auto-detect TelephonyUI version based on iOS major version
+        if let verStr = dev.version, let major = Int(verStr.components(separatedBy: ".").first ?? "") {
+            if major >= 18 {
+                self.targetTelephonyVersion = "TelephonyUI-10"
+            } else if major >= 16 {
+                self.targetTelephonyVersion = "TelephonyUI-9"
+            } else {
+                self.targetTelephonyVersion = "TelephonyUI-8"
+            }
+        }
+        
+        // 2. Auto-detect language
+        if let langCode = dev.language?.components(separatedBy: "-").first?.lowercased() {
+            for target in PasscodeLanguageTarget.allCases {
+                if target.code == langCode {
+                    self.passcodeLanguageTarget = target
+                    break
+                }
+            }
+        }
+        
+        // 3. Auto-detect bold text
+        if let isBold = dev.bold_text {
+            self.passcodeBoldTarget = isBold ? .boldOnly : .regularOnly
+        }
+        
+        self.log("  ⚡ Auto-configured passcode target: \(self.targetTelephonyVersion), language: \(self.passcodeLanguageTarget.rawValue), font: \(self.passcodeBoldTarget.rawValue)")
     }
     
     // MARK: - Live Card Scanner
@@ -796,9 +830,19 @@ class AppViewModel: ObservableObject {
         proc.environment = AppViewModel.processEnvironment
         proc.arguments = ["syslog", udid]
         proc.standardOutput = pipe
-        proc.standardError = FileHandle.nullDevice
+        proc.standardError = pipe
         
         self.scanProcess = proc
+        // Launch before yielding so Stop cannot race with a pending launch.
+        do {
+            try proc.run()
+        } catch {
+            scanProcess = nil
+            isScanningCards = false
+            statusText = "Could not start card scanning."
+            log("Syslog monitor failed to start: \(error.localizedDescription)")
+            return
+        }
         
         let dummyHashes = [
             "M6nDwZrkYbFlsodLgCbvyFZQ1cc=",
@@ -808,23 +852,32 @@ class AppViewModel: ObservableObject {
         
         Task.detached {
             do {
-                try proc.run()
                 let handle = pipe.fileHandleForReading
                 var buffer = Data()
                 
-                while proc.isRunning {
-                    let chunk = handle.availableData
+                // Drain the pipe through EOF, including the last buffered record
+                // when the helper exits. isRunning can become false too early.
+                while true {
+                    let chunk = try handle.read(upToCount: 65536) ?? Data()
                     if chunk.isEmpty {
-                        usleep(100000)
-                        continue
+                        if buffer.isEmpty { break }
+                        buffer.append(0x0A)
+                    } else {
+                        buffer.append(chunk)
                     }
-                    buffer.append(chunk)
                     
                     while let newlineRange = buffer.range(of: Data([0x0A])) {
                         let lineData = buffer.subdata(in: buffer.startIndex..<newlineRange.lowerBound)
                         buffer.removeSubrange(buffer.startIndex..<newlineRange.upperBound)
                         
                         guard let line = String(data: lineData, encoding: .utf8) else { continue }
+                        if line.hasPrefix("AirCard scanner: ") {
+                            await MainActor.run {
+                                guard self.scanProcess === proc else { return }
+                                self.log(line)
+                            }
+                            continue
+                        }
                         let lower = line.lowercased()
                         
                         let isWalletSubsystem = lower.contains("passd") ||
@@ -859,6 +912,7 @@ class AppViewModel: ObservableObject {
                                     if dummyHashes.contains(candidate) { continue }
                                     
                                     await MainActor.run {
+                                        guard self.scanProcess === proc else { return }
                                         if !self.cards.contains(where: { $0.id == candidate }) {
                                             self.cards.append(CardItem(id: candidate, isSelected: true))
                                             self.saveCards()
@@ -870,19 +924,35 @@ class AppViewModel: ObservableObject {
                             }
                         }
                     }
+                    if chunk.isEmpty { break }
+                }
+                proc.waitUntilExit()
+                await MainActor.run {
+                    guard self.scanProcess === proc else { return }
+                    self.scanProcess = nil
+                    self.isScanningCards = false
+                    self.statusText = "Card scanning ended. Check the log and reconnect the iPhone to retry."
+                    self.log("Syslog monitor exited (status \(proc.terminationStatus)). Total cards: \(self.cards.count).")
+                    self.saveCards()
                 }
             } catch {
+                if proc.isRunning { proc.terminate() }
+                proc.waitUntilExit()
                 await MainActor.run {
+                    guard self.scanProcess === proc else { return }
+                    self.scanProcess = nil
                     self.log("Syslog monitor stopped: \(error.localizedDescription)")
                     self.isScanningCards = false
+                    self.statusText = "Card scanning failed. Check the log and retry."
                 }
             }
         }
     }
     
     func stopCardScanning() {
-        scanProcess?.terminate()
+        let process = scanProcess
         scanProcess = nil
+        if let process, process.isRunning { process.terminate() }
         isScanningCards = false
         if statusText.contains("Double-click Side button") {
             statusText = "Ready"
@@ -1735,7 +1805,7 @@ struct ContentView: View {
                     Text("AirCard")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("v1.2.3")
+                    Text("v1.2.4")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -2895,6 +2965,17 @@ struct ContentView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
                 Spacer()
+                if let dev = vm.device, dev.connected {
+                    Button(action: { vm.applyDevicePreferences(from: dev) }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "sparkles")
+                            Text("Auto-detect")
+                        }
+                        .font(.system(size: 9, weight: .medium))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Reset to iPhone's detected language and font style")
+                }
             }
             
             // 1. Language Target Selector

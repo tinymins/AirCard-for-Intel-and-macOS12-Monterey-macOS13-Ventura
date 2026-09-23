@@ -11,7 +11,7 @@ all: build/device_helper build/airtraffic_host
 build:
 	mkdir -p $@
 
-build/device_helper: Sources/device_helper.m Sources/airlift_target.h | build
+build/device_helper: Sources/device_helper.m Sources/airlift_target.h Sources/os_trace.h | build
 	$(CLANG) $(CFLAGS) $(FOUNDATION) $(MOBILEDEVICE) $< -o $@
 	codesign --force --sign - $@
 
