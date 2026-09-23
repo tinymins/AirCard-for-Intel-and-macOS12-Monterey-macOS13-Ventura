@@ -1,8 +1,12 @@
-# AirCard 🎴
+# AirCard for macOS 12 & 13 🎴
 
 > **Apple Wallet Card Skinner & Lockscreen Passcode Themer for iOS 18+ (No Jailbreak Required)**  
-> **Tested on iOS 27 release.**
+> **Tracks the latest upstream AirCard releases while preserving macOS 12 Monterey and macOS 13 Ventura support.**
+> **Upstream is tested on iOS 27; compatibility-build hardware coverage is documented per release.**
 > Powered by the `airlift` AirTraffic sync exploit.
+
+> [!IMPORTANT]
+> This is an independently maintained compatibility fork of [Mak5er/AirCard](https://github.com/Mak5er/AirCard). The application remains `AirCard.app`; this repository maintains the additional deployment and API compatibility needed by macOS 12 and macOS 13 on Intel and Apple Silicon Macs.
 
 <p align="left">
   <a href="https://www.paypal.com/donate/?hosted_button_id=98QRTC2HFRA4Y"><img src="https://img.shields.io/badge/Donate-PayPal-00457C?style=flat-square&logo=paypal" alt="Donate with PayPal" /></a>
@@ -18,17 +22,20 @@
 - ✏️ **Edit Existing .passthm Themes:** Open any Cowabunga or Nugget theme package directly in the creator, tweak button artwork, reposition photos, and re-export or flash.
 - ⚡ **Per-Card & Bulk Customization:** Set unique artwork for each card or apply one design across all cards with a single click.
 - 📱 **Zero-Hassle Card Detection:** Tap any card in your iPhone's Wallet app to detect its hash in real-time.
-- 🚀 **100% Standalone (Universal):** Native support for both **Apple Silicon** and **Intel (x86)** Macs. All required device-communication utilities and image engines are pre-bundled inside the app.
-- 📦 **Zero Prerequisites:** No Homebrew, Python packages, or terminal setup required for macOS users.
+- 🚀 **Universal Mac Build:** Native `arm64` and `x86_64` support for both Apple Silicon and Intel Macs.
+- 🧭 **macOS 12 & 13 Compatibility:** Maintains Monterey and Ventura support while continuing to follow current upstream AirCard releases.
 
 ---
 
 ## Installation
 
 ### macOS (Universal DMG)
-1. Download **`AirCard.dmg`** from [Releases](https://github.com/mak5er/AirCard/releases).
+1. Download **`AirCard.dmg`** from [Releases](https://github.com/tinymins/AirCard-macOS12-13/releases).
 2. Open `AirCard.dmg` and drag **`AirCard.app`** into your **Applications** folder.
-3. Fully compatible with both **Apple Silicon** and **Intel (x86)** Macs.
+3. The compatibility build supports macOS 12 Monterey, macOS 13 Ventura, and newer macOS versions on both **Apple Silicon** and **Intel (x86)** Macs.
+
+> [!NOTE]
+> **Python 3 requirement:** The current compatibility build uses an installed Python 3 runtime. If `python3 --version` is unavailable, run `xcode-select --install` before launching AirCard. A bundled runtime may be added in a future compatibility release.
 
 > [!NOTE]
 > **First Launch on macOS (Gatekeeper):**
@@ -70,16 +77,26 @@
 ## Building from Source
 
 ```sh
-git clone https://github.com/mak5er/AirCard.git
-cd AirCard
+git clone https://github.com/tinymins/AirCard-macOS12-13.git
+cd AirCard-macOS12-13
 chmod +x build.sh
 ./build.sh
 ```
-This builds universal binaries (`arm64` + `x86_64`), bundles dependencies into `build/AirCard.app`, and outputs `build/AirCard.dmg`.
+This builds universal binaries (`arm64` + `x86_64`), bundles the project scripts and native helpers into `build/AirCard.app`, and outputs `build/AirCard.dmg`.
+
+---
+
+## Compatibility & Upstream Policy
+
+- Follow current releases and relevant fixes from [Mak5er/AirCard](https://github.com/Mak5er/AirCard).
+- Preserve macOS 12 Monterey and macOS 13 Ventura deployment compatibility when adopting upstream changes.
+- Keep the application name, bundle identifier, data format, and user workflow aligned with upstream unless compatibility requires a documented difference.
+- Validate each compatibility release as a Universal build and publish any hardware, iOS, Python, signing, or runtime limitations in its release notes.
 
 ---
 
 ## Contributors
+- **[@tinymins](https://github.com/tinymins)** — macOS 12/13 compatibility fork maintainer.
 - **[@mak5er](https://github.com/mak5er)** (Developer) — [GitHub](https://github.com/mak5er) · [Twitter / X](https://x.com/mak5er)
 - **[@Lumid-Off](https://github.com/Lumid-Off)** (Contributor & Developer) — [GitHub](https://github.com/Lumid-Off) · [Twitter / X](https://x.com/LumidOff)
 - **[AirLift](https://github.com/0xjohnnydev/airlift)** by **[0xjohnny (@0xjohnnydev)](https://github.com/0xjohnnydev)**: Original AirTraffic/ATAirlock sandbox escape and proof of concept underlying `AirliftFFI`.
