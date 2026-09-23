@@ -1,7 +1,7 @@
-# AirCard for macOS 12 & 13 🎴
+# AirCard for Intel Macs — macOS 12 Monterey & macOS 13 Ventura 🎴
 
 > **Apple Wallet Card Skinner & Lockscreen Passcode Themer for iOS 18+ (No Jailbreak Required)**  
-> **Tracks the latest upstream AirCard releases while preserving macOS 12 Monterey and macOS 13 Ventura support.**
+> **Tracks the latest upstream AirCard releases while preserving macOS 12 Monterey and macOS 13 Ventura support for Intel Macs.**
 > **Upstream is tested on iOS 27; compatibility-build hardware coverage is documented per release.**
 > Powered by the `airlift` AirTraffic sync exploit.
 
@@ -23,14 +23,14 @@
 - ⚡ **Per-Card & Bulk Customization:** Set unique artwork for each card or apply one design across all cards with a single click.
 - 📱 **Zero-Hassle Card Detection:** Tap any card in your iPhone's Wallet app to detect its hash in real-time.
 - 🚀 **Universal Mac Build:** Native `arm64` and `x86_64` support for both Apple Silicon and Intel Macs.
-- 🧭 **macOS 12 & 13 Compatibility:** Maintains Monterey and Ventura support while continuing to follow current upstream AirCard releases.
+- 🧭 **Intel macOS 12 & 13 Compatibility:** Maintains Monterey and Ventura support while continuing to follow current upstream AirCard releases.
 
 ---
 
 ## Installation
 
 ### macOS (Universal DMG)
-1. Download **`AirCard.dmg`** from [Releases](https://github.com/tinymins/AirCard-macOS12-13/releases).
+1. Download **`AirCard.dmg`** from [Releases](https://github.com/tinymins/AirCard-for-Intel-and-macOS12-Monterey-macOS13-Ventura/releases).
 2. Open `AirCard.dmg` and drag **`AirCard.app`** into your **Applications** folder.
 3. The compatibility build supports macOS 12 Monterey, macOS 13 Ventura, and newer macOS versions on both **Apple Silicon** and **Intel (x86)** Macs.
 
@@ -94,8 +94,8 @@ for the verified environment and remaining coverage.
 ## Building from Source
 
 ```sh
-git clone https://github.com/tinymins/AirCard-macOS12-13.git
-cd AirCard-macOS12-13
+git clone https://github.com/tinymins/AirCard-for-Intel-and-macOS12-Monterey-macOS13-Ventura.git
+cd AirCard-for-Intel-and-macOS12-Monterey-macOS13-Ventura
 chmod +x build.sh
 ./build.sh
 ```
